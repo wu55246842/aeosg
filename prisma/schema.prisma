@@ -1,0 +1,250 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrgRole {
+  owner
+  admin
+  editor
+  viewer
+}
+
+enum SiteStatus {
+  draft
+  published
+}
+
+enum JobStatus {
+  queued
+  running
+  succeeded
+  failed
+}
+
+enum CitationEngine {
+  chatgpt
+  perplexity
+  gemini
+  google_aio
+  other
+}
+
+model User {
+  id           String      @id @default(cuid())
+  email        String      @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime    @default(now())
+  orgsOwned    Org[]
+  memberships  OrgMember[]
+}
+
+model Org {
+  id             String            @id @default(cuid())
+  name           String
+  ownerId        String
+  owner          User              @relation(fields: [ownerId], references: [id])
+  createdAt      DateTime          @default(now())
+  members        OrgMember[]
+  apiKeys        ApiKey[]
+  sites          Site[]
+  jobs           Job[]
+  subscriptions  OrgSubscription[]
+}
+
+model OrgMember {
+  id     String  @id @default(cuid())
+  orgId  String
+  userId String
+  role   OrgRole
+  org    Org     @relation(fields: [orgId], references: [id])
+  user   User    @relation(fields: [userId], references: [id])
+
+  @@unique([orgId, userId])
+}
+
+model ApiKey {
+  id         String   @id @default(cuid())
+  orgId      String
+  name       String
+  keyHash    String
+  scopesJson Json
+  createdAt  DateTime @default(now())
+  org        Org      @relation(fields: [orgId], references: [id])
+}
+
+model Site {
+  id              String             @id @default(cuid())
+  orgId           String
+  name            String
+  slug            String
+  status          SiteStatus         @default(draft)
+  vercelProjectId String?
+  baseUrl         String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  org             Org                @relation(fields: [orgId], references: [id])
+  pages           Page[]
+  assets          Asset[]
+  entities        Entity[]
+  entityEdges     EntityEdge[]
+  llmsSnapshots   LlmsTxtSnapshot[]
+  audits          Audit[]
+  citations       Citation[]
+
+  @@unique([orgId, slug])
+}
+
+model Page {
+  id          String           @id @default(cuid())
+  siteId      String
+  path        String
+  title       String
+  contentMd   String
+  excerpt     String?
+  locale      String           @default("en")
+  isIndexable Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  site        Site             @relation(fields: [siteId], references: [id])
+  revisions   PageRevision[]
+  schemas     SchemaSnapshot[]
+  faqItems    FaqItem[]
+  audits      Audit[]
+
+  @@unique([siteId, path])
+}
+
+model PageRevision {
+  id        String   @id @default(cuid())
+  pageId    String
+  version   Int
+  contentMd String
+  createdAt DateTime @default(now())
+  page      Page     @relation(fields: [pageId], references: [id])
+
+  @@unique([pageId, version])
+}
+
+model Asset {
+  id       String  @id @default(cuid())
+  siteId   String
+  type     String
+  url      String
+  metaJson Json?
+  site     Site    @relation(fields: [siteId], references: [id])
+}
+
+model Entity {
+  id           String       @id @default(cuid())
+  siteId       String
+  type         String
+  name         String
+  canonicalUrl String?
+  sameAsJson   Json?
+  propsJson    Json?
+  site         Site         @relation(fields: [siteId], references: [id])
+  fromEdges    EntityEdge[] @relation("fromEntity")
+  toEdges      EntityEdge[] @relation("toEntity")
+
+  @@index([siteId, type, name])
+}
+
+model EntityEdge {
+  id           String  @id @default(cuid())
+  siteId       String
+  fromEntityId String
+  relation     String
+  toEntityId   String
+  propsJson    Json?
+  site         Site    @relation(fields: [siteId], references: [id])
+  fromEntity   Entity  @relation("fromEntity", fields: [fromEntityId], references: [id])
+  toEntity     Entity  @relation("toEntity", fields: [toEntityId], references: [id])
+}
+
+model SchemaSnapshot {
+  id              String   @id @default(cuid())
+  pageId          String
+  jsonLd          Json
+  schemaTypesJson Json
+  createdAt       DateTime @default(now())
+  page            Page     @relation(fields: [pageId], references: [id])
+
+  @@index([pageId, createdAt(sort: Desc)])
+}
+
+model FaqItem {
+  id        String   @id @default(cuid())
+  pageId    String
+  question  String
+  answer    String
+  source    String
+  createdAt DateTime @default(now())
+  page      Page     @relation(fields: [pageId], references: [id])
+}
+
+model LlmsTxtSnapshot {
+  id        String   @id @default(cuid())
+  siteId    String
+  content   String
+  createdAt DateTime @default(now())
+  site      Site     @relation(fields: [siteId], references: [id])
+}
+
+model Audit {
+  id           String   @id @default(cuid())
+  siteId        String
+  pageId        String?
+  score         Int
+  findingsJson  Json
+  createdAt     DateTime @default(now())
+  site          Site     @relation(fields: [siteId], references: [id])
+  page          Page?    @relation(fields: [pageId], references: [id])
+
+  @@index([siteId, createdAt(sort: Desc)])
+}
+
+model Citation {
+  id          String         @id @default(cuid())
+  siteId       String
+  engine       CitationEngine
+  evidenceUrl  String
+  queryText    String?
+  snippet      String?
+  sentiment    String?
+  createdAt    DateTime       @default(now())
+  site         Site           @relation(fields: [siteId], references: [id])
+}
+
+model Job {
+  id         String    @id @default(cuid())
+  orgId      String
+  type       String
+  payloadJson Json
+  status     JobStatus @default(queued)
+  error      String?
+  runAt      DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  org        Org      @relation(fields: [orgId], references: [id])
+}
+
+model OrgSubscription {
+  id                String   @id @default(cuid())
+  orgId             String
+  plan              String
+  status            String
+  currentPeriodEnd  DateTime?
+  stripeCustomerId  String?
+  stripeSubId       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  org               Org      @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId])
+}

@@ -1,0 +1,25 @@
+name: Scheduled AEO Jobs
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Task name'
+        required: true
+        default: 'audit-nightly'
+      siteId:
+        description: 'Optional siteId'
+        required: false
+jobs:
+  run-task:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run API task
+        run: |
+          curl -X POST "$API_URL/api/cron/${{ github.event.inputs.task || 'audit-nightly' }}" \
+            -H "x-cron-secret: $CRON_SECRET" \
+            -H "Content-Type: application/json"
+        env:
+          API_URL: ${{ secrets.API_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
